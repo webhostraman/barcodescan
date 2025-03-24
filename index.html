@@ -67,6 +67,16 @@
             justify-content: center;
             gap: 10px;
         }
+
+        #server-url {
+            width: 100%;
+            max-width: 400px;
+            margin: 10px auto;
+            padding: 8px;
+            border: 2px solid #ccc;
+            border-radius: 5px;
+            text-align: center;
+        }
     </style>
 </head>
 <body class="d-flex flex-column align-items-center justify-content-center vh-100">
@@ -77,14 +87,12 @@
         <div id="barcode-box"></div>
         <p id="output" class="alert alert-secondary">Waiting for scan...</p>
 
-        <!-- Server URL Input -->
-        <div class="mb-3">
-            <label for="server-url" class="form-label">Server URL:</label>
-            <input type="text" id="server-url" class="form-control text-center" placeholder="Enter server URL (e.g., 192.168.0.1:3000)">
-        </div>
+        <!-- Input for Server URL -->
+        <input type="text" id="server-url" placeholder="Enter server URL (e.g., 192.168.0.1:3000)" />
 
         <div class="btn-container">
-            <button class="btn btn-primary" onclick="toggleCamera()">Switch Camera</button>
+            <button class="btn btn-primary" onclick="saveServerUrl()">Save URL</button>
+            <button class="btn btn-danger" onclick="toggleCamera()">Switch Camera</button>
         </div>
     </div>
 
@@ -95,6 +103,19 @@
         let lastScannedCode = "";
         let lastScannedTime = 0;
         let currentCamera = "environment"; // Default to back camera
+
+        // Load stored server URL
+        document.getElementById("server-url").value = localStorage.getItem("serverUrl") || "";
+
+        function saveServerUrl() {
+            const url = document.getElementById("server-url").value.trim();
+            if (url) {
+                localStorage.setItem("serverUrl", url);
+                alert("Server URL saved!");
+            } else {
+                alert("Please enter a valid server URL.");
+            }
+        }
 
         async function startBarcodeScanner() {
             if ('BarcodeDetector' in window) {
@@ -147,15 +168,9 @@
                             name: "Live",
                             type: "LiveStream",
                             target: document.querySelector("#scanner-container"),
-                            constraints: {
-                                width: 640,
-                                height: 480,
-                                facingMode: currentCamera
-                            }
+                            constraints: { width: 640, height: 480, facingMode: currentCamera }
                         },
-                        decoder: {
-                            readers: ["ean_reader", "code_128_reader", "upc_reader", "code_39_reader", "qr_reader"]
-                        },
+                        decoder: { readers: ["ean_reader", "code_128_reader", "upc_reader", "code_39_reader", "qr_reader"] },
                         locate: true,
                         numOfWorkers: navigator.hardwareConcurrency || 4,
                         frequency: 20,
@@ -184,6 +199,7 @@
 
         function handleScan(scannedCode) {
             const currentTime = new Date().getTime();
+
             if (scannedCode !== lastScannedCode || currentTime - lastScannedTime > 1000) {
                 lastScannedCode = scannedCode;
                 lastScannedTime = currentTime;
@@ -196,25 +212,17 @@
                 barcodeBox.innerText = scannedCode;
                 barcodeBox.style.display = "block";
 
-                // Hide barcode box after 1 second
-                setTimeout(() => {
-                    barcodeBox.style.display = "none";
-                }, 1000);
+                setTimeout(() => { barcodeBox.style.display = "none"; }, 1000);
 
                 // Get server URL
-                const serverUrl = document.getElementById("server-url").value.trim();
+                const serverUrl = localStorage.getItem("serverUrl");
                 if (serverUrl) {
-                    localStorage.setItem("serverUrl", serverUrl);
-                    fetch(`http://${serverUrl}/type?text=${scannedCode}`);
+                    fetch(`http://${serverUrl}/type?text=${scannedCode}`)
+                        .catch(err => console.error("Error sending barcode:", err));
                 }
 
-                // Play beep sound
                 document.getElementById("beep").play();
-
-                // Vibrate device
-                if (navigator.vibrate) {
-                    navigator.vibrate(200);
-                }
+                if (navigator.vibrate) navigator.vibrate(200);
             }
         }
 
@@ -222,14 +230,6 @@
             currentCamera = currentCamera === "environment" ? "user" : "environment";
             startBarcodeScanner();
         }
-
-        // Load stored server URL
-        document.addEventListener("DOMContentLoaded", () => {
-            const storedUrl = localStorage.getItem("serverUrl");
-            if (storedUrl) {
-                document.getElementById("server-url").value = storedUrl;
-            }
-        });
 
         startBarcodeScanner();
     </script>
