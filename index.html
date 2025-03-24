@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Barcode Scanner</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/quagga/0.12.1/quagga.min.js"></script>
+
+    <style>
+        body {
+            transition: background 0.5s ease-in-out;
+        }
+
+        #scanner-container {
+            width: 100%;
+            max-width: 450px;
+            margin: auto;
+            padding: 20px;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            position: relative;
+        }
+
+        video {
+            width: 100%;
+            max-width: 450px;
+            height: auto;
+            border-radius: 5px;
+        }
+
+        #barcode-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            padding: 10px;
+            background: rgba(0, 255, 0, 0.8);
+            color: white;
+            font-size: 24px;
+            font-weight: bold;
+            border-radius: 5px;
+            display: none;
+        }
+
+        #output {
+            margin-top: 10px;
+            font-size: 20px;
+            font-weight: bold;
+            padding: 10px;
+            border-radius: 5px;
+            transition: background 0.5s ease-in-out;
+        }
+
+        .scanned {
+            background-color: #28a745 !important;
+            color: white;
+        }
+
+        .btn-container {
+            margin-top: 10px;
+            display: flex;
+            justify-content: center;
+            gap: 10px;
+        }
+    </style>
+</head>
+<body class="d-flex flex-column align-items-center justify-content-center vh-100">
+
+    <div id="scanner-container" class="text-center mb-4">
+        <h2 class="mb-3">Scan a Barcode</h2>
+        <video id="video" autoplay playsinline></video>
+        <div id="barcode-box"></div>
+        <p id="output" class="alert alert-secondary">Waiting for scan...</p>
+
+        <!-- Server URL Input -->
+        <div class="mb-3">
+            <label for="server-url" class="form-label">Server URL:</label>
+            <input type="text" id="server-url" class="form-control text-center" placeholder="Enter server URL (e.g., 192.168.0.1:3000)">
+        </div>
+
+        <div class="btn-container">
+            <button class="btn btn-primary" onclick="toggleCamera()">Switch Camera</button>
+        </div>
+    </div>
+
+    <!-- Beep Sound -->
+    <audio id="beep" src="https://www.soundjay.com/button/beep-07.wav"></audio>
+
+    <script>
+        let lastScannedCode = "";
+        let lastScannedTime = 0;
+        let currentCamera = "environment"; // Default to back camera
+
+        async function startBarcodeScanner() {
+            if ('BarcodeDetector' in window) {
+                console.log("Using BarcodeDetector API");
+                useBarcodeDetectorAPI();
+            } else {
+                console.log("Using QuaggaJS");
+                useQuaggaJS();
+            }
+        }
+
+        async function useBarcodeDetectorAPI() {
+            const video = document.getElementById("video");
+            const constraints = {
+                video: { facingMode: currentCamera, width: 640, height: 480 }
+            };
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                const barcodeDetector = new BarcodeDetector({ formats: ["ean_13", "qr_code", "code_128", "code_39", "upc_a"] });
+
+                async function detectBarcode() {
+                    if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                        try {
+                            const barcodes = await barcodeDetector.detect(video);
+                            if (barcodes.length > 0) {
+                                const scannedCode = barcodes[0].rawValue;
+                                handleScan(scannedCode);
+                            }
+                        } catch (error) {
+                            console.error("Barcode detection error:", error);
+                        }
+                    }
+                    requestAnimationFrame(detectBarcode);
+                }
+
+                detectBarcode();
+            } catch (error) {
+                console.error("Camera permission denied or not available:", error);
+                document.getElementById("output").innerText = "Camera permission denied. Please allow access.";
+            }
+        }
+
+        function useQuaggaJS() {
+            navigator.mediaDevices.getUserMedia({ video: { facingMode: currentCamera } })
+                .then(function(stream) {
+                    Quagga.init({
+                        inputStream: {
+                            name: "Live",
+                            type: "LiveStream",
+                            target: document.querySelector("#scanner-container"),
+                            constraints: {
+                                width: 640,
+                                height: 480,
+                                facingMode: currentCamera
+                            }
+                        },
+                        decoder: {
+                            readers: ["ean_reader", "code_128_reader", "upc_reader", "code_39_reader", "qr_reader"]
+                        },
+                        locate: true,
+                        numOfWorkers: navigator.hardwareConcurrency || 4,
+                        frequency: 20,
+                        multiple: false
+                    }, function(err) {
+                        if (err) {
+                            console.error(err);
+                            return;
+                        }
+                        Quagga.start();
+                    });
+
+                    Quagga.onDetected(function(result) {
+                        let scannedCode = result.codeResult.code;
+                        handleScan(scannedCode);
+                        Quagga.stop();
+
+                        setTimeout(() => Quagga.start(), 2000);
+                    });
+                })
+                .catch(function(err) {
+                    console.error("Camera permission denied or not available:", err);
+                    document.getElementById("output").innerText = "Camera permission denied. Please allow access.";
+                });
+        }
+
+        function handleScan(scannedCode) {
+            const currentTime = new Date().getTime();
+            if (scannedCode !== lastScannedCode || currentTime - lastScannedTime > 1000) {
+                lastScannedCode = scannedCode;
+                lastScannedTime = currentTime;
+
+                document.getElementById("output").innerText = "Scanned Code: " + scannedCode;
+                document.getElementById("output").classList.add("scanned");
+
+                // Show barcode box
+                const barcodeBox = document.getElementById("barcode-box");
+                barcodeBox.innerText = scannedCode;
+                barcodeBox.style.display = "block";
+
+                // Hide barcode box after 1 second
+                setTimeout(() => {
+                    barcodeBox.style.display = "none";
+                }, 1000);
+
+                // Get server URL
+                const serverUrl = document.getElementById("server-url").value.trim();
+                if (serverUrl) {
+                    localStorage.setItem("serverUrl", serverUrl);
+                    fetch(`http://${serverUrl}/type?text=${scannedCode}`);
+                }
+
+                // Play beep sound
+                document.getElementById("beep").play();
+
+                // Vibrate device
+                if (navigator.vibrate) {
+                    navigator.vibrate(200);
+                }
+            }
+        }
+
+        function toggleCamera() {
+            currentCamera = currentCamera === "environment" ? "user" : "environment";
+            startBarcodeScanner();
+        }
+
+        // Load stored server URL
+        document.addEventListener("DOMContentLoaded", () => {
+            const storedUrl = localStorage.getItem("serverUrl");
+            if (storedUrl) {
+                document.getElementById("server-url").value = storedUrl;
+            }
+        });
+
+        startBarcodeScanner();
+    </script>
+
+</body>
+</html>
